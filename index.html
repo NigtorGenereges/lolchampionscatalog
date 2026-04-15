@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LoL Champions Каталог чемпионов League of Legends</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+<body>
+
+<div id="app">
+   
+    <div class="header"> 
+        <div class="header-content">
+            <div class="logo">
+                <h1>LoL Champions</h1>
+                <p>Каталог чемпионов League of Legends</p>
+            </div>
+            <div class="search-box">
+                <input type="text" v-model="searchQuery"  @keyup.enter="searchChampions" placeholder="Поиск чемпиона...">
+                <button @click="searchChampions"> Найти</button>
+            </div>
+        </div>
+    </div>
+
+    
+    <div class="tags-section">
+        <div class="tags-title"> Фильтр по ролям</div>
+        <div class="tags-list">
+            <div v-for="tag in tags" :key="tag" class="tag-chip" :class="{ active: selectedTag === tag }" @click="filterByTag(tag)">
+                {{ tag }}
+            </div>
+            <div class="tag-chip" :class="{ active: selectedTag === null }"@click="clearTagFilter"> Все роли
+            </div>
+        </div>
+    </div>
+
+
+    <div class="container">
+        <div v-if="loading" class="loader">
+            <div class="spinner"></div>
+            <p>Загрузка чемпионов...</p>
+        </div>
+        <div v-else-if="error" class="error-msg">❌ {{ error }}</div>
+        
+        <div v-else class="champions-grid">
+            <div v-for="champ in filteredChampions" :key="champ.id" class="champion-card" @click="openModal(champ)">
+                <img :src="getChampionImage(champ.id)" :alt="champ.name"class="champion-img" @error="handleImageError">
+                <div class="champion-info">
+                    <h3 class="champion-name">{{ champ.name }}</h3>
+                    <p class="champion-title">{{ champ.title }}</p>
+                    <div class="champion-tags">
+                        <span v-for="tag in champ.tags" :key="tag" class="champ-tag">{{ tag }}</span>
+                    </div>
+                    <div class="difficulty">
+                        <span>Сложность:</span>
+                        <div class="stars">
+                            <span v-for="n in 10" :key="n" class="star" :class="{ active: n <= champ.info.difficulty }">★</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    
+    <div class="modal" :class="{ active: modalVisible }" @click.self="closeModal">
+    <div class="modal-content" v-if="selectedChampion">
+        <button class="modal-close" @click="closeModal">X</button>
+        
+
+        <div class="modal-header">
+            <img :src="getChampionImage(selectedChampion.id)" :alt="selectedChampion.name" class="modal-img" @error="handleImageError">
+            <div class="modal-header-info">
+                <h2>{{ selectedChampion.name }}</h2>
+                <p class="modal-title">{{ selectedChampion.title }}</p>
+                <div class="champion-tags">
+                    <span v-for="tag in selectedChampion.tags" :key="tag" class="champ-tag">{{ tag }}</span>
+                </div>
+            </div>
+        </div>
+        
+
+        <div class="modal-body">
+    <p class="modal-lore">{{ selectedChampion.blurb }}</p>
+    
+    <!-- статы -->
+    <div class="stats-section">
+        <h4>Характеристики</h4>
+        <div class="stats-grid">
+            <div class="stat-item"><span>Здоровье</span><span>{{ selectedChampion.stats?.hp || '?' }} (+{{ selectedChampion.stats?.hpperlevel || '?' }})</span></div>
+            <div class="stat-item"><span>Ресурс</span><span>{{ selectedChampion.partype === 'Mana' ? 'Мана' : selectedChampion.partype || '?' }}</span></div>
+            <div class="stat-item"><span>Броня</span><span>{{ selectedChampion.stats?.armor || '?' }} (+{{ selectedChampion.stats?.armorperlevel || '?' }})</span></div>
+            <div class="stat-item"><span>Скорость</span><span>{{ selectedChampion.stats?.movespeed || '?' }}</span></div>
+            <div class="stat-item"><span>Дальность</span><span>{{ selectedChampion.stats?.attackrange || '?' }}</span></div>
+            <div class="stat-item"><span>Сила атаки</span><span>{{ selectedChampion.stats?.attackdamage || '?' }} (+{{ selectedChampion.stats?.attackdamageperlevel || '?' }})</span></div>
+        </div>
+    </div>
+    
+    <!-- способности -->
+    <div class="abilities-section" v-if="!loadingDetails && championDetails">
+        <h4>✨ Способности</h4>
+        
+        <!-- пассивка -->
+        <div class="passive-ability">
+            <div class="ability-icon">
+                <img :src="getPassiveImage(championDetails.passive.image)" @error="handleImageError">
+                <span class="ability-key">Пассивная</span>
+            </div>
+            <div class="ability-info">
+                <div class="ability-name">{{ championDetails.passive.name }}</div>
+                <div class="ability-desc" v-html="championDetails.passive.description.replace(/<br>/g, ' ')"></div>
+            </div>
+        </div>
+        
+        <!-- q, w, e, r умения -->
+        <div class="spells-grid">
+            <div v-for="(spell, index) in championDetails.spells" :key="spell.id" class="spell-card">
+                <div class="ability-icon">
+                    <img :src="getSpellImage(spell.image)" @error="handleImageError">
+                    <span class="ability-key">{{ ['Q', 'W', 'E', 'R'][index] }}</span>
+                </div>
+                <div class="ability-info">
+                    <div class="ability-name">{{ spell.name }}</div>
+                    <div class="ability-desc" v-html="spell.description.replace(/<br>/g, ' ')"></div>
+                    <div class="ability-stats">
+                        <span v-if="spell.cooldown !== '-' && spell.cooldown">⏱️ {{ spell.cooldown }}</span>
+                        <span v-if="spell.cost !== '-' && spell.cost">⚡ {{ spell.cost }}</span>
+                        <span v-if="spell.range !== '-' && spell.range">📏 {{ spell.range }} ед.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div v-if="loadingDetails" class="loading-abilities">
+        <div class="mini-spinner"></div>
+        <span>Загрузка способностей...</span>
+    </div>
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
